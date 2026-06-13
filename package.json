@@ -1,0 +1,99 @@
+{
+  "name": "runtimewire-vscode",
+  "displayName": "RuntimeWire — AI News",
+  "description": "The latest RuntimeWire AI-news headlines in your VS Code status bar, for the minutes you spend waiting on a coding agent.",
+  "version": "0.2.1",
+  "publisher": "runtimewire",
+  "license": "MIT",
+  "icon": "icon-128.png",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "runtimewire",
+    "news",
+    "ai news",
+    "headlines",
+    "tech news"
+  ],
+  "homepage": "https://runtimewire.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ryan-merket/runtimewire-vscode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ryan-merket/runtimewire-vscode/issues"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "runtimewire.signIn",
+        "title": "RuntimeWire: Sign in",
+        "icon": "$(account)"
+      },
+      {
+        "command": "runtimewire.signOut",
+        "title": "RuntimeWire: Sign out"
+      },
+      {
+        "command": "runtimewire.refresh",
+        "title": "RuntimeWire: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "runtimewire.openDashboard",
+        "title": "RuntimeWire: Open earnings dashboard"
+      },
+      {
+        "command": "runtimewire.openCurrent",
+        "title": "RuntimeWire: Open current headline or sponsor"
+      },
+      {
+        "command": "runtimewire.menu",
+        "title": "RuntimeWire: Menu"
+      }
+    ],
+    "configuration": {
+      "title": "RuntimeWire",
+      "properties": {
+        "runtimewire.apiBase": {
+          "type": "string",
+          "default": "https://runtimewire.com",
+          "scope": "application",
+          "markdownDescription": "RuntimeWire origin to read news + ads from. Change only for self-hosted/staging. For your security this is a user-level (application-scoped) setting so a workspace cannot redirect your signed-in requests; it must be HTTPS (only `localhost` may use http)."
+        },
+        "runtimewire.newsCount": {
+          "type": "number",
+          "default": 5,
+          "minimum": 4,
+          "maximum": 6,
+          "description": "How many news headlines to show alongside the single sponsored slot (4–6)."
+        },
+        "runtimewire.refreshSeconds": {
+          "type": "number",
+          "default": 180,
+          "minimum": 60,
+          "description": "How often the feed refreshes, in seconds."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json -w",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.9.3"
+  }
+}
