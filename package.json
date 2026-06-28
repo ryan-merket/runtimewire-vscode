@@ -1,8 +1,8 @@
 {
-  "name": "runtimewire-vscode",
-  "displayName": "RuntimeWire — AI News",
-  "description": "The latest RuntimeWire AI-news headlines in your VS Code status bar, for the minutes you spend waiting on a coding agent.",
-  "version": "0.2.1",
+  "name": "runtimewire",
+  "displayName": "RuntimeWire",
+  "description": "The latest RuntimeWire AI-news headlines in your VS Code, VSCodium, or Antigravity status bar, for the minutes you spend waiting on a coding agent.",
+  "version": "0.5.2",
   "publisher": "runtimewire",
   "license": "MIT",
   "icon": "icon-128.png",
@@ -14,10 +14,15 @@
   ],
   "keywords": [
     "runtimewire",
+    "kickbacks",
+    "kickbacks.ai",
+    "kickbacks ai",
     "news",
     "ai news",
     "headlines",
-    "tech news"
+    "tech news",
+    "antigravity",
+    "vscodium"
   ],
   "homepage": "https://runtimewire.com",
   "repository": {
@@ -58,6 +63,11 @@
       {
         "command": "runtimewire.menu",
         "title": "RuntimeWire: Menu"
+      },
+      {
+        "command": "runtimewire.togglePause",
+        "title": "RuntimeWire: Pause/Resume ticker",
+        "icon": "$(debug-pause)"
       }
     ],
     "configuration": {
@@ -81,6 +91,27 @@
           "default": 180,
           "minimum": 60,
           "description": "How often the feed refreshes, in seconds."
+        },
+        "runtimewire.categories": {
+          "type": "array",
+          "scope": "application",
+          "default": [],
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["ai", "startups", "products", "funding", "founder-moves", "exits", "venture", "scoops", "latest"]
+          },
+          "markdownDescription": "Only show headlines in these RuntimeWire topics. Leave empty to show every topic. Options: `ai`, `startups`, `products`, `funding`, `founder-moves`, `exits`, `venture`, `scoops`, `latest`."
+        },
+        "runtimewire.prominent": {
+          "type": "boolean",
+          "default": false,
+          "description": "Give the RuntimeWire status-bar entry a high-contrast background so it stands out on busy or high-DPI status bars."
+        },
+        "runtimewire.adsOnly": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide RuntimeWire news headlines and show only the sponsored slot in the status bar. When no ad is available the entry falls back to the plain RuntimeWire label."
         }
       }
     }
@@ -89,11 +120,15 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p tsconfig.json",
     "watch": "tsc -p tsconfig.json -w",
-    "package": "vsce package --no-dependencies"
+    "package": "vsce package --no-dependencies",
+    "publish:vsce": "vsce publish --no-dependencies",
+    "publish:openvsx": "ovsx publish --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/vscode": "^1.80.0",
+    "@vscode/vsce": "^3.2.0",
+    "ovsx": "^0.10.1",
     "typescript": "^5.9.3"
   }
 }

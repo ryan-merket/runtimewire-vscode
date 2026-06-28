@@ -1,6 +1,15 @@
 import * as vscode from "vscode";
 import { StatusBar } from "./statusBar";
-import { getApiBase, getDeviceId, getNewsCount, getRefreshMs } from "./config";
+import {
+  getAdsOnly,
+  getApiBase,
+  getCategories,
+  getDeviceId,
+  getNewsCount,
+  getProminent,
+  getRefreshMs,
+  withIdeRef,
+} from "./config";
 import { getKey, clearKey } from "./secrets";
 import { signIn } from "./auth";
 import { publisherBalance, publisherLedger, type LedgerEntry } from "./api";
@@ -28,6 +37,13 @@ let rotIdx = 0;
 /** The row currently shown in the status bar (so a click opens the right thing). */
 let current: FeedRow | null = null;
 
+/** When paused, the rotation halts and the entry shows a muted "paused" label. */
+let paused = false;
+/** Persisted so a pause survives an editor reload. */
+const PAUSED_KEY = "runtimewire.paused";
+/** One-time flag so the discovery hint shows only on first run. */
+const HINT_KEY = "runtimewire.onboarded";
+
 /** Sum the developer's revenue-share entries dated today (local time). */
 function sumToday(ledger: LedgerEntry[] | null): number {
   if (!ledger) return 0;
@@ -52,15 +68,36 @@ function sumToday(ledger: LedgerEntry[] | null): number {
 async function rebuildRotation(ctx: vscode.ExtensionContext): Promise<void> {
   const base = getApiBase();
   const key = (await getKey(ctx)) ?? null;
-  const { rows } = await buildFeed(base, key, getNewsCount());
+  const adsOnly = getAdsOnly();
+  const { rows, fetchedAny } = await buildFeed(
+    base,
+    key,
+    getNewsCount(),
+    getCategories(),
+    adsOnly,
+  );
   if (rows.length) {
     rotation = rows;
     if (rotIdx >= rotation.length) rotIdx = 0;
+  } else if (fetchedAny || adsOnly) {
+    // Clear the rotation (next advance() shows the status-only fallback label)
+    // when EITHER:
+    //   - the fetch succeeded but the topic filter matched nothing (so we never
+    //     keep showing a muted topic), OR
+    //   - we're in ads-only mode and no ad filled — ads-only must NEVER fall
+    //     back to stale news rows, so an unfilled slot shows the plain label.
+    // (Outside ads-only, a true ad/news fetch failure leaves `rotation`
+    // untouched for resilience.)
+    rotation = [];
+    rotIdx = 0;
   }
 }
 
 /** Advance the status bar to the next row; arm the impression timer for ads. */
 function advance(ctx: vscode.ExtensionContext, status: StatusBar): void {
+  // While paused the ticker freezes on its muted "paused" label — don't rotate
+  // or arm any impression timers.
+  if (paused) return;
   if (adDwellTimer) {
     clearTimeout(adDwellTimer);
     adDwellTimer = undefined;
@@ -108,13 +145,18 @@ async function openSlot(ctx: vscode.ExtensionContext, slot: Slot): Promise<void>
 /** Open an editorial headline in the browser (no ad tracking). */
 function openNews(item: NewsItem): void {
   if (item.link && /^https?:\/\//i.test(item.link)) {
-    void vscode.env.openExternal(vscode.Uri.parse(item.link));
+    void vscode.env.openExternal(vscode.Uri.parse(withIdeRef(item.link, getApiBase())));
   }
 }
 
 export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const status = new StatusBar();
   ctx.subscriptions.push(status);
+
+  // Restore the persisted pause state + the prominent-background preference.
+  paused = ctx.globalState.get<boolean>(PAUSED_KEY) === true;
+  status.setPaused(paused);
+  status.setProminent(getProminent());
 
   const updateBalance = async (): Promise<void> => {
     const base = getApiBase();
@@ -149,7 +191,8 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       vscode.window.showInformationMessage("RuntimeWire: signed out.");
     }),
     vscode.commands.registerCommand("runtimewire.openDashboard", () => {
-      void vscode.env.openExternal(vscode.Uri.parse(`${getApiBase()}/publisher`));
+      const base = getApiBase();
+      void vscode.env.openExternal(vscode.Uri.parse(withIdeRef(`${base}/publisher`, base)));
     }),
     vscode.commands.registerCommand("runtimewire.openCurrent", () => {
       if (!current) return void openMenu(ctx);
@@ -157,13 +200,33 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       else void openSlot(ctx, current.slot);
     }),
     vscode.commands.registerCommand("runtimewire.menu", () => void openMenu(ctx)),
+    vscode.commands.registerCommand("runtimewire.togglePause", async () => {
+      paused = !paused;
+      await ctx.globalState.update(PAUSED_KEY, paused);
+      // Pausing must cancel any pending sponsored-impression dwell timer, or an
+      // ad shown just before the pause would still fire an impression while the
+      // ticker is frozen (a measurement/billing integrity bug).
+      if (paused && adDwellTimer) {
+        clearTimeout(adDwellTimer);
+        adDwellTimer = undefined;
+      }
+      status.setPaused(paused);
+      // Resuming should show a headline immediately rather than waiting for the
+      // next rotation tick.
+      if (!paused) advance(ctx, status);
+    }),
   );
 
-  // React to settings changes (api base / cadence / news count).
+  // React to settings changes (api base / cadence / news count / topics /
+  // prominence). Re-apply the background immediately and rebuild the feed so a
+  // new topic filter takes effect without waiting for the next refresh tick.
   ctx.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration("runtimewire")) return;
-      void rebuildRotation(ctx);
+      status.setProminent(getProminent());
+      void rebuildRotation(ctx).then(() => {
+        if (!paused) advance(ctx, status);
+      });
       if (feedTimer) clearInterval(feedTimer);
       feedTimer = setInterval(() => void rebuildRotation(ctx), getRefreshMs());
     }),
@@ -173,6 +236,20 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   feedTimer = setInterval(() => void rebuildRotation(ctx), getRefreshMs());
   balanceTimer = setInterval(() => void updateBalance(), 30_000);
   rotateTimer = setInterval(() => advance(ctx, status), ROTATE_MS);
+
+  // First-run discovery hint: several reviewers didn't realise the status-bar
+  // entry is clickable. Show this once, then never again.
+  if (!ctx.globalState.get<boolean>(HINT_KEY)) {
+    void ctx.globalState.update(HINT_KEY, true);
+    void vscode.window
+      .showInformationMessage(
+        "RuntimeWire is in your status bar — click it to read full headlines, filter topics, pause, or sign in to earn a revenue share.",
+        "Open menu",
+      )
+      .then((choice) => {
+        if (choice === "Open menu") void vscode.commands.executeCommand("runtimewire.menu");
+      });
+  }
 
   ctx.subscriptions.push({ dispose: clearTimers });
 }
@@ -205,6 +282,12 @@ async function openMenu(ctx: vscode.ExtensionContext): Promise<void> {
   if (items.length) {
     items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
   }
+
+  items.push({
+    id: "pause",
+    label: paused ? "$(play) Resume ticker" : "$(debug-pause) Pause ticker",
+    description: paused ? "Currently paused" : undefined,
+  });
 
   if (key) {
     items.push(
@@ -243,6 +326,9 @@ async function openMenu(ctx: vscode.ExtensionContext): Promise<void> {
       break;
     case "refresh":
       await vscode.commands.executeCommand("runtimewire.refresh");
+      break;
+    case "pause":
+      await vscode.commands.executeCommand("runtimewire.togglePause");
       break;
   }
 }

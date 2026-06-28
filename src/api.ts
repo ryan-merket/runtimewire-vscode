@@ -1,4 +1,4 @@
-import { USER_AGENT } from "./config";
+import { detectIde, getUserAgent } from "./config";
 import { parseRss, type NewsItem } from "./rss";
 
 const TIMEOUT_MS = 9000;
@@ -15,7 +15,7 @@ async function request(
       ...init,
       signal: ctrl.signal,
       headers: {
-        "User-Agent": USER_AGENT,
+        "User-Agent": getUserAgent(),
         Accept: "application/json",
         ...(init?.headers ?? {}),
       },
@@ -90,8 +90,14 @@ export type ServeUnitResponse = {
  * folded into the response (no separate /publisher/serve call needed).
  */
 export function serveUnit(base: string, key?: string | null): Promise<ServeUnitResponse | null> {
+  // Placement stays "vscode" (the editor inventory bucket shared by VS Code and
+  // its forks), but `ide` reports the real host editor so advertisers can target
+  // VSCodium/Antigravity specifically. The server treats `ide=vscodium` and
+  // `ide=antigravity` as also matching `vscode`-targeted inventory, so existing
+  // campaigns keep filling.
+  const ide = detectIde();
   return getJson<ServeUnitResponse>(
-    `${base}/api/public/units?placement=vscode&surface=ide&ide=vscode&device=desktop`,
+    `${base}/api/public/units?placement=vscode&surface=ide&ide=${encodeURIComponent(ide)}&device=desktop`,
     key ? { headers: authHeaders(key) } : undefined,
   );
 }
